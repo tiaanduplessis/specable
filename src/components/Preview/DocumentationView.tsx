@@ -54,6 +54,7 @@ export function DocumentationView() {
   const [headerExpanded, setHeaderExpanded] = useState(true)
   const [searchFilters, setSearchFilters] =
     useState<SearchFilters>(DEFAULT_FILTERS)
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
   const [showFilterMenu, setShowFilterMenu] = useState(false)
   const filterMenuRef = useRef<HTMLDivElement>(null)
   const filterButtonRef = useRef<HTMLButtonElement>(null)
@@ -65,6 +66,22 @@ export function DocumentationView() {
 
   const toggleFilter = useCallback((key: keyof SearchFilters) => {
     setSearchFilters((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
+  const toggleTag = useCallback((tag: string) => {
+    setSelectedTags((prev) => {
+      const next = new Set(prev)
+      if (next.has(tag)) {
+        next.delete(tag)
+      } else {
+        next.add(tag)
+      }
+      return next
+    })
+  }, [])
+
+  const clearTags = useCallback(() => {
+    setSelectedTags(new Set())
   }, [])
 
   const activeFilterCount = Object.values(searchFilters).filter(Boolean).length
@@ -81,6 +98,44 @@ export function DocumentationView() {
     return `Filter by ${labels.join(', ')}...`
   }, [searchFilters, activeFilterCount])
 
+  const HTTP_METHODS = [
+    'get',
+    'post',
+    'put',
+    'patch',
+    'delete',
+    'options',
+    'head',
+  ] as const
+
+  const sortedTags = useMemo(() => {
+    const counts = new Map<string, number>()
+
+    if (parsedSpec?.tags) {
+      for (const tag of parsedSpec.tags) {
+        counts.set(tag.name, 0)
+      }
+    }
+
+    if (parsedSpec?.paths) {
+      for (const pathItem of Object.values(parsedSpec.paths)) {
+        if (!pathItem) continue
+        for (const method of HTTP_METHODS) {
+          const operation = (pathItem as Record<string, unknown>)[method] as
+            | OpenAPIV3.OperationObject
+            | undefined
+          if (operation?.tags) {
+            for (const tag of operation.tags) {
+              counts.set(tag, (counts.get(tag) ?? 0) + 1)
+            }
+          }
+        }
+      }
+    }
+
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [parsedSpec])
+
   const navigateToPath = useCallback(
     (path: string) => {
       const position = sourceMap[path]
@@ -94,9 +149,9 @@ export function DocumentationView() {
   const filteredPaths = useMemo(() => {
     if (!parsedSpec?.paths) return []
     const entries = Object.entries(parsedSpec.paths)
-    if (!filter) return entries
-
-    const lowerFilter = filter.toLowerCase()
+    const hasTagFilter = selectedTags.size > 0
+    const hasTextFilter = !!filter
+    const lowerFilter = filter ? filter.toLowerCase() : ''
 
     const searchSchemaFields = (
       schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | undefined,
@@ -117,76 +172,94 @@ export function DocumentationView() {
       return false
     }
 
-    return entries.filter(([path, pathItem]) => {
+    const matchesTextFilter = (
+      path: string,
+      operation: OpenAPIV3.OperationObject,
+    ): boolean => {
+      if (!hasTextFilter) return true
       if (searchFilters.path && path.toLowerCase().includes(lowerFilter))
         return true
-
-      const item = pathItem as OpenAPIV3.PathItemObject
-      const methods = [
-        'get',
-        'post',
-        'put',
-        'patch',
-        'delete',
-        'options',
-        'head',
-      ] as const
-      for (const method of methods) {
-        const operation = (item as Record<string, unknown>)[method] as
-          | OpenAPIV3.OperationObject
-          | undefined
-        if (operation) {
+      if (
+        searchFilters.path &&
+        operation.summary?.toLowerCase().includes(lowerFilter)
+      )
+        return true
+      if (
+        searchFilters.description &&
+        operation.description?.toLowerCase().includes(lowerFilter)
+      )
+        return true
+      if (
+        searchFilters.operationId &&
+        operation.operationId?.toLowerCase().includes(lowerFilter)
+      )
+        return true
+      if (searchFilters.parameterName && operation.parameters) {
+        for (const param of operation.parameters) {
           if (
-            searchFilters.path &&
-            operation.summary?.toLowerCase().includes(lowerFilter)
+            !('$ref' in param) &&
+            param.name?.toLowerCase().includes(lowerFilter)
           )
             return true
-          if (
-            searchFilters.description &&
-            operation.description?.toLowerCase().includes(lowerFilter)
-          )
-            return true
-          if (
-            searchFilters.operationId &&
-            operation.operationId?.toLowerCase().includes(lowerFilter)
-          )
-            return true
-
-          if (searchFilters.parameterName && operation.parameters) {
-            for (const param of operation.parameters) {
-              if (
-                !('$ref' in param) &&
-                param.name?.toLowerCase().includes(lowerFilter)
-              )
-                return true
-            }
-          }
-
-          if (
-            searchFilters.bodyField &&
-            operation.requestBody &&
-            !('$ref' in operation.requestBody)
-          ) {
-            const content = operation.requestBody.content
-            for (const mediaType of Object.values(content ?? {})) {
+        }
+      }
+      if (
+        searchFilters.bodyField &&
+        operation.requestBody &&
+        !('$ref' in operation.requestBody)
+      ) {
+        const content = operation.requestBody.content
+        for (const mediaType of Object.values(content ?? {})) {
+          if (searchSchemaFields(mediaType.schema)) return true
+        }
+      }
+      if (searchFilters.bodyField && operation.responses) {
+        for (const response of Object.values(operation.responses)) {
+          if (response && !('$ref' in response) && response.content) {
+            for (const mediaType of Object.values(response.content)) {
               if (searchSchemaFields(mediaType.schema)) return true
-            }
-          }
-
-          if (searchFilters.bodyField && operation.responses) {
-            for (const response of Object.values(operation.responses)) {
-              if (response && !('$ref' in response) && response.content) {
-                for (const mediaType of Object.values(response.content)) {
-                  if (searchSchemaFields(mediaType.schema)) return true
-                }
-              }
             }
           }
         }
       }
       return false
-    })
-  }, [parsedSpec, filter, searchFilters])
+    }
+
+    const isFiltering = hasTagFilter || hasTextFilter
+    const results: [string, OpenAPIV3.PathItemObject, string[] | null][] = []
+
+    for (const [path, pathItem] of entries) {
+      const item = pathItem as OpenAPIV3.PathItemObject
+      if (!isFiltering) {
+        results.push([path, item, null])
+        continue
+      }
+
+      const visibleMethods: string[] = []
+      for (const method of HTTP_METHODS) {
+        const operation = (item as Record<string, unknown>)[method] as
+          | OpenAPIV3.OperationObject
+          | undefined
+        if (!operation) continue
+
+        if (hasTagFilter) {
+          const hasMathingTag = operation.tags?.some((t) =>
+            selectedTags.has(t),
+          )
+          if (!hasMathingTag) continue
+        }
+
+        if (!matchesTextFilter(path, operation)) continue
+        visibleMethods.push(method)
+      }
+
+      if (visibleMethods.length > 0) {
+        results.push([path, item, visibleMethods])
+      }
+    }
+
+    return results
+  }, [parsedSpec, filter, searchFilters, selectedTags])
 
   const filteredSchemas = useMemo(() => {
     if (!parsedSpec?.components?.schemas) return []
@@ -362,24 +435,64 @@ export function DocumentationView() {
             )}
           </div>
         </div>
+
+        {sortedTags.length > 0 && (
+          <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1">
+            <button
+              onClick={clearTags}
+              className={`px-2 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                selectedTags.size === 0
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+              }`}
+            >
+              All
+            </button>
+            {sortedTags.map(([tag, count]) => (
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                  selectedTags.has(tag)
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                }`}
+              >
+                {tag}
+                <span
+                  className={`px-1 text-[10px] font-medium rounded ${
+                    selectedTags.has(tag)
+                      ? 'bg-purple-500/30 text-purple-100'
+                      : 'bg-zinc-700 text-zinc-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
-        {!hasResults && filter && (
+        {!hasResults && (filter || selectedTags.size > 0) && (
           <div className="text-center text-zinc-600 py-8">
-            No matches found for "{filter}"
+            No matches found
+            {filter ? ` for "${filter}"` : ''}
+            {selectedTags.size > 0 ? ' with selected tags' : ''}
           </div>
         )}
 
         {/* Endpoints */}
-        {filteredPaths.map(([path, pathItem]) => (
+        {filteredPaths.map(([path, pathItem, visibleMethods]) => (
           <PathSection
             key={path}
             path={path}
             pathItem={pathItem as OpenAPIV3.PathItemObject}
             spec={parsedSpec}
             onNavigate={navigateToPath}
+            visibleMethods={visibleMethods}
           />
         ))}
 
@@ -414,11 +527,13 @@ function PathSection({
   pathItem,
   spec,
   onNavigate,
+  visibleMethods,
 }: {
   path: string
   pathItem: OpenAPIV3.PathItemObject
   spec: OpenAPIV3.Document
   onNavigate: (path: string) => void
+  visibleMethods: string[] | null
 }) {
   const methods = [
     'get',
@@ -431,7 +546,12 @@ function PathSection({
   ] as const
 
   const operations = methods
-    .filter((method) => (pathItem as Record<string, unknown>)[method])
+    .filter((method) => {
+      if (!(pathItem as Record<string, unknown>)[method]) return false
+      if (visibleMethods !== null && !visibleMethods.includes(method))
+        return false
+      return true
+    })
     .map((method) => ({
       method,
       operation: (pathItem as Record<string, unknown>)[
