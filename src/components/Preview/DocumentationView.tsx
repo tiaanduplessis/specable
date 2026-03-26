@@ -34,6 +34,7 @@ interface SearchFilters {
   parameterName: boolean
   schemaField: boolean
   bodyField: boolean
+  header: boolean
 }
 
 const DEFAULT_FILTERS: SearchFilters = {
@@ -43,6 +44,7 @@ const DEFAULT_FILTERS: SearchFilters = {
   parameterName: false,
   schemaField: false,
   bodyField: false,
+  header: false,
 }
 
 export function DocumentationView() {
@@ -218,6 +220,27 @@ export function DocumentationView() {
           if (response && !('$ref' in response) && response.content) {
             for (const mediaType of Object.values(response.content)) {
               if (searchSchemaFields(mediaType.schema)) return true
+            }
+          }
+        }
+      }
+      if (searchFilters.header) {
+        if (operation.parameters) {
+          for (const param of operation.parameters) {
+            if (
+              !('$ref' in param) &&
+              param.in === 'header' &&
+              param.name?.toLowerCase().includes(lowerFilter)
+            )
+              return true
+          }
+        }
+        if (operation.responses) {
+          for (const response of Object.values(operation.responses)) {
+            if (response && !('$ref' in response) && response.headers) {
+              for (const headerName of Object.keys(response.headers)) {
+                if (headerName.toLowerCase().includes(lowerFilter)) return true
+              }
             }
           }
         }
@@ -429,6 +452,11 @@ export function DocumentationView() {
                     label="Request/response fields"
                     checked={searchFilters.bodyField}
                     onChange={() => toggleFilter('bodyField')}
+                  />
+                  <FilterCheckbox
+                    label="Headers"
+                    checked={searchFilters.header}
+                    onChange={() => toggleFilter('header')}
                   />
                 </div>
               </div>
