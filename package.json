@@ -67,7 +67,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.1.18",
-    "yaml": "^2.8.2",
+    "yaml": "^2.8.3",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
