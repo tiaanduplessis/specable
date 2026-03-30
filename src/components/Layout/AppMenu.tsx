@@ -26,6 +26,7 @@ interface AppMenuProps {
   onImportUrl: () => void
   onSave: () => void
   onSaveAs: () => void
+  onShare: () => void
   onExportJson: () => void
   onExportYaml: () => void
   onFormatDocument: () => void
@@ -45,6 +46,7 @@ export function AppMenu({
   onImportUrl,
   onSave,
   onSaveAs,
+  onShare,
   onExportJson,
   onExportYaml,
   onFormatDocument,
@@ -139,6 +141,15 @@ export function AppMenu({
               shortcut: 'Ctrl+Shift+S',
               type: 'action' as const,
               action: onSaveAs,
+            },
+          ],
+          [
+            {
+              id: 'file.share',
+              label: 'Share Spec...',
+              shortcut: 'Ctrl+Shift+L',
+              type: 'action' as const,
+              action: onShare,
             },
           ],
           [
@@ -368,6 +379,7 @@ export function AppMenu({
       onImportUrl,
       onSave,
       onSaveAs,
+      onShare,
       onExportJson,
       onExportYaml,
       dispatchEditorCommand,

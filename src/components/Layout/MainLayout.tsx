@@ -20,6 +20,7 @@ import {
   type Command,
 } from '../CommandPalette'
 import { useValidation } from '../../hooks/useValidation'
+import { shareSpec } from '../../services/share'
 import { useFileSystem } from '../../hooks/useFileSystem'
 import { useVersionHistory } from '../../hooks/useVersionHistory'
 import { useViewport } from '../../hooks/useViewport'
@@ -70,6 +71,29 @@ export function MainLayout() {
   } = useFileSystem()
 
   const { createSnapshot } = useVersionHistory()
+
+  const file = useEditorStore((state) => state.file)
+  const showToast = useEditorStore((state) => state.showToast)
+
+  const handleShare = useCallback(async () => {
+    if (!file) {
+      showToast('error', 'Nothing to share — no file is open.')
+      return
+    }
+    const result = await shareSpec(file.content, file.name)
+    switch (result.type) {
+      case 'url':
+        showToast('success', result.message)
+        break
+      case 'webshare':
+      case 'download':
+        showToast('info', result.message)
+        break
+      case 'error':
+        showToast('error', result.message)
+        break
+    }
+  }, [file, showToast])
 
   const fileCommands: Command[] = useMemo(
     () => [
@@ -130,6 +154,13 @@ export function MainLayout() {
         action: exportAsYaml,
       },
       {
+        id: 'file.share',
+        label: 'Share Spec...',
+        shortcut: 'Ctrl+Shift+L',
+        category: 'file',
+        action: handleShare,
+      },
+      {
         id: 'history.show',
         label: 'Show Version History',
         shortcut: 'Ctrl+5',
@@ -157,6 +188,7 @@ export function MainLayout() {
       saveFileAs,
       exportAsJson,
       exportAsYaml,
+      handleShare,
       setRightPanelView,
       showPreview,
       togglePreview,
@@ -198,6 +230,10 @@ export function MainLayout() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
         e.preventDefault()
         saveFileAs()
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'L') {
+        e.preventDefault()
+        handleShare()
       }
       if (e.key === 'F1') {
         e.preventDefault()
@@ -243,6 +279,7 @@ export function MainLayout() {
     openFile,
     saveFile,
     saveFileAs,
+    handleShare,
     setRightPanelView,
     showPreview,
   ])
@@ -359,6 +396,7 @@ export function MainLayout() {
           onImportUrl={() => importFromUrl()}
           onSave={saveFile}
           onSaveAs={saveFileAs}
+          onShare={handleShare}
           onExportJson={exportAsJson}
           onExportYaml={exportAsYaml}
           onFormatDocument={formatEditorContent}
