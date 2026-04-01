@@ -1,6 +1,7 @@
 import { useCallback, useState, useMemo, useRef } from 'react'
 import {
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   Check,
@@ -137,6 +138,14 @@ export function DocumentationView() {
 
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [parsedSpec])
+
+  const totalOperationCount = useMemo(() => {
+    let total = 0
+    for (const [, count] of sortedTags) {
+      total += count
+    }
+    return total
+  }, [sortedTags])
 
   const navigateToPath = useCallback(
     (path: string) => {
@@ -468,13 +477,22 @@ export function DocumentationView() {
           <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1">
             <button
               onClick={clearTags}
-              className={`px-2 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-2 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
                 selectedTags.size === 0
                   ? 'bg-purple-600 text-white'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
               }`}
             >
               All
+              <span
+                className={`px-1 text-[10px] font-medium rounded ${
+                  selectedTags.size === 0
+                    ? 'bg-purple-500/30 text-purple-100'
+                    : 'bg-zinc-700 text-zinc-500'
+                }`}
+              >
+                {totalOperationCount}
+              </span>
             </button>
             {sortedTags.map(([tag, count]) => (
               <button
@@ -651,6 +669,12 @@ function OperationCard({
   }, [operation.parameters, spec])
 
   const hasParameters = parameters.length > 0
+  const hasDetails =
+    hasParameters ||
+    !!operation.requestBody ||
+    !!operation.responses ||
+    (!!operation.security && operation.security.length > 0)
+  const [detailsExpanded, setDetailsExpanded] = useState(true)
 
   return (
     <div
@@ -658,25 +682,44 @@ function OperationCard({
         operation.deprecated ? 'opacity-60' : ''
       }`}
     >
-      <div
-        className="cursor-pointer hover:bg-zinc-800/50 -m-3 p-3 transition-colors"
-        onClick={onNavigate}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onNavigate()
-          }
-        }}
-      >
+      <div className="-m-3 p-3">
         <div className="flex flex-wrap items-center gap-3">
+          {hasDetails && (
+            <button
+              type="button"
+              onClick={() => setDetailsExpanded(!detailsExpanded)}
+              className="p-0.5 hover:bg-zinc-700 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+              aria-expanded={detailsExpanded}
+              aria-label={
+                detailsExpanded ? 'Collapse details' : 'Expand details'
+              }
+            >
+              {detailsExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+            </button>
+          )}
           <span
             className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${style.bg} ${style.text}`}
           >
             {method}
           </span>
-          <code className="text-sm text-zinc-200 font-mono">{path}</code>
+          <code
+            className="text-sm text-zinc-200 font-mono cursor-pointer hover:text-purple-400 transition-colors"
+            onClick={onNavigate}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onNavigate()
+              }
+            }}
+          >
+            {path}
+          </code>
           <button
             type="button"
             onClick={copyPath}
@@ -713,49 +756,55 @@ function OperationCard({
         )}
       </div>
 
-      {/* Parameters */}
-      {hasParameters && (
-        <CollapsibleSection
-          title="Parameters"
-          defaultExpanded={parameters.length <= 3}
-          badge={
-            <span className="ml-2 px-1.5 py-0.5 bg-zinc-700 text-zinc-400 text-xs rounded">
-              {parameters.length}
-            </span>
-          }
-        >
-          <div className="bg-zinc-800/50 rounded p-2">
-            {parameters.map((param) => (
-              <ParameterRow
-                key={`${param.in}-${param.name}`}
-                param={param}
-                spec={spec}
-              />
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
+      {detailsExpanded && (
+        <>
+          {/* Parameters */}
+          {hasParameters && (
+            <CollapsibleSection
+              title="Parameters"
+              defaultExpanded={parameters.length <= 3}
+              badge={
+                <span className="ml-2 px-1.5 py-0.5 bg-zinc-700 text-zinc-400 text-xs rounded">
+                  {parameters.length}
+                </span>
+              }
+            >
+              <div className="bg-zinc-800/50 rounded p-2">
+                {parameters.map((param) => (
+                  <ParameterRow
+                    key={`${param.in}-${param.name}`}
+                    param={param}
+                    spec={spec}
+                  />
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
 
-      {/* Request Body */}
-      {operation.requestBody && (
-        <RequestBodySection
-          requestBody={operation.requestBody as OpenAPIV3.RequestBodyObject}
-          spec={spec}
-        />
-      )}
+          {/* Request Body */}
+          {operation.requestBody && (
+            <RequestBodySection
+              requestBody={
+                operation.requestBody as OpenAPIV3.RequestBodyObject
+              }
+              spec={spec}
+            />
+          )}
 
-      {/* Responses */}
-      {operation.responses && (
-        <ResponseSection responses={operation.responses} spec={spec} />
-      )}
+          {/* Responses */}
+          {operation.responses && (
+            <ResponseSection responses={operation.responses} spec={spec} />
+          )}
 
-      {/* Security */}
-      {operation.security && operation.security.length > 0 && (
-        <SecuritySection
-          security={operation.security}
-          securitySchemes={spec.components?.securitySchemes}
-          spec={spec}
-        />
+          {/* Security */}
+          {operation.security && operation.security.length > 0 && (
+            <SecuritySection
+              security={operation.security}
+              securitySchemes={spec.components?.securitySchemes}
+              spec={spec}
+            />
+          )}
+        </>
       )}
     </div>
   )
