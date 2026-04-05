@@ -1,5 +1,8 @@
 import { expose } from 'comlink'
-import SwaggerParser from '@apidevtools/swagger-parser'
+import {
+  validate as validateSpec,
+  parse as parseSpec,
+} from '@readme/openapi-parser'
 import YAML from 'yaml'
 import type { OpenAPIV3 } from 'openapi-types'
 import type {
@@ -111,77 +114,63 @@ class ValidatorWorker implements ValidatorWorkerApi {
 
     const validateStart = performance.now()
 
-    // Check OpenAPI version - swagger-parser only supports 3.0.x
-    const openApiVersion = (parsed as { openapi?: string })?.openapi ?? ''
-    const isOpenApi31 = openApiVersion.startsWith('3.1')
+    try {
+      const result = await validateSpec(
+        structuredClone(parsed) as OpenAPIV3.Document,
+        { validate: { errors: { colorize: false } } },
+      )
 
-    if (isOpenApi31) {
-      // For OpenAPI 3.1.x, skip schema validation (not supported by swagger-parser)
-      // but still use the parsed spec for display
-      parsedSpec = parsed as OpenAPIV3.Document
-      schemaValid = true // Assume valid since we can't validate
-      warnings.push({
-        line: 1,
-        column: 1,
-        message:
-          'OpenAPI 3.1.x schema validation is not fully supported. Syntax validation only.',
-        path: 'openapi',
-        severity: 'info',
-        rule: 'openapi-version',
-      })
-    } else {
-      try {
-        parsedSpec = (await SwaggerParser.validate(
-          structuredClone(parsed) as OpenAPIV3.Document,
-          {
-            validate: {
-              spec: true,
-              schema: true,
-            },
-          },
-        )) as OpenAPIV3.Document
+      if (result.valid) {
         schemaValid = true
-      } catch (e) {
+      } else {
         schemaValid = false
-        const err = e as Error & {
-          details?: Array<{ path: string[]; message: string }>
-        }
-
-        if (err.details && Array.isArray(err.details)) {
-          for (const detail of err.details) {
-            const pathStr = detail.path?.join('.') ?? ''
-            const position = sourceMap[pathStr] ?? { line: 1, column: 1 }
-
-            errors.push({
-              line: position.line,
-              column: position.column,
-              message: detail.message,
-              path: pathStr,
-              severity: 'error',
-              rule: 'openapi-schema',
-            })
-          }
-        } else {
-          const position = this.extractPositionFromError(err.message, sourceMap)
+        for (const error of result.errors) {
+          const position = this.extractPositionFromError(
+            error.message,
+            sourceMap,
+          )
           errors.push({
             line: position.line,
             column: position.column,
-            message: err.message,
+            message: error.message,
             path: '',
             severity: 'error',
             rule: 'openapi-schema',
           })
         }
-
-        // Try to get the parsed spec even if validation failed
-        try {
-          parsedSpec = (await SwaggerParser.parse(
-            structuredClone(parsed) as OpenAPIV3.Document,
-          )) as OpenAPIV3.Document
-        } catch {
-          parsedSpec = parsed as OpenAPIV3.Document
-        }
       }
+
+      for (const warning of result.warnings) {
+        warnings.push({
+          line: 1,
+          column: 1,
+          message: warning.message,
+          path: '',
+          severity: 'warning',
+          rule: 'openapi-schema',
+        })
+      }
+    } catch (e) {
+      schemaValid = false
+      const err = e as Error
+      const position = this.extractPositionFromError(err.message, sourceMap)
+      errors.push({
+        line: position.line,
+        column: position.column,
+        message: err.message,
+        path: '',
+        severity: 'error',
+        rule: 'openapi-schema',
+      })
+    }
+
+    // Get the parsed spec for UI display
+    try {
+      parsedSpec = (await parseSpec(
+        structuredClone(parsed) as OpenAPIV3.Document,
+      )) as OpenAPIV3.Document
+    } catch {
+      parsedSpec = parsed as OpenAPIV3.Document
     }
 
     const validateTimeMs = performance.now() - validateStart
@@ -382,4 +371,5 @@ class ValidatorWorker implements ValidatorWorkerApi {
   }
 }
 
+export { ValidatorWorker }
 expose(new ValidatorWorker())

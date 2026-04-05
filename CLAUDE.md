@@ -35,7 +35,7 @@ pnpm test -t "source map"
 
 All heavy processing is offloaded to Web Workers using Comlink for typed RPC:
 
-- `validator.worker.ts`: YAML/JSON parsing, OpenAPI schema validation (swagger-parser)
+- `validator.worker.ts`: YAML/JSON parsing, OpenAPI schema validation (@readme/openapi-parser)
 - `linter.worker.ts`: Spectral linting for best practices
 - `graph.worker.ts`: Builds schema relationship graph (nodes and edges) from parsed spec
 - `diff.worker.ts`: Computes API differences with breaking change detection (uses deep-diff)
@@ -50,7 +50,7 @@ Workers are created using the factory in `src/services/worker-factory.ts` which 
 - **Singleton**: Use `getValidationPipeline()` to get the shared instance
 - **Data flow**: Content change → `useValidation` hook → debounced `ValidationPipeline.validate()` → worker → store update
 - **Cancellation**: Uses `AbortController` to cancel in-flight validations when content changes rapidly
-- **Limitation**: OpenAPI 3.1.x specs only get syntax validation (swagger-parser doesn't support 3.1 schema validation). OpenAPI 3.0.x and 2.0 (Swagger) specs get full schema validation.
+- OpenAPI 3.1.x, 3.0.x, and 2.0 (Swagger) specs all receive full schema validation.
 
 ### Editor
 
@@ -120,7 +120,7 @@ Several services use singleton patterns - always use the getter functions rather
 
 - **React Compiler** is enabled (babel-plugin-react-compiler) for automatic memoisation
 - **Source maps** track YAML/JSON positions back to original content for accurate error locations
-- **Node polyfills** (vite-plugin-node-polyfills) allow swagger-parser to run in browser
+- **Node polyfills** (vite-plugin-node-polyfills) allow @readme/openapi-parser to run in browser
 
 ## Testing
 

@@ -63,7 +63,7 @@ All validation and linting runs in Web Workers to keep the UI responsive. The va
 ### Supported Specifications
 
 - OpenAPI 3.0.x (full validation)
-- OpenAPI 3.1.x (syntax validation only - swagger-parser limitation)
+- OpenAPI 3.1.x (full validation)
 - Swagger 2.0 (full validation)
 
 ## Keyboard Shortcuts
