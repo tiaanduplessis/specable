@@ -4,6 +4,27 @@ import {
   getValidationPipeline,
   lintToValidationErrors,
 } from '../services/validation-pipeline'
+import { parseContent } from '../utils/content'
+import type { OpenAPIV3 } from 'openapi-types'
+
+/**
+ * Fallback: parse content on the main thread when the worker fails
+ * to return a parsedSpec (e.g. due to serialization issues with Comlink).
+ */
+function tryParseSpec(content: string): OpenAPIV3.Document | null {
+  try {
+    const parsed = parseContent(content)
+    if (parsed && typeof parsed === 'object' && 'openapi' in parsed) {
+      return parsed as OpenAPIV3.Document
+    }
+    if (parsed && typeof parsed === 'object' && 'swagger' in parsed) {
+      return parsed as unknown as OpenAPIV3.Document
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 export function useValidation() {
   const file = useEditorStore((state) => state.file)
@@ -77,9 +98,10 @@ export function useValidation() {
             warnings: allWarnings,
           })
 
-          if (validation.parsedSpec) {
-            setParsedSpec(validation.parsedSpec, validation.sourceMap)
-          }
+          setParsedSpec(
+            validation.parsedSpec ?? tryParseSpec(content),
+            validation.sourceMap,
+          )
         }
 
         setValidating(false)
@@ -87,6 +109,7 @@ export function useValidation() {
       .catch((e) => {
         if (!active) return
         setValidating(false)
+        setParsedSpec(tryParseSpec(content), {})
         if (e.message !== 'Validation cancelled') {
           console.error('Validation error:', e)
         }

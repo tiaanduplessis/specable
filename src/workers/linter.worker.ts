@@ -1,7 +1,7 @@
 import { expose } from 'comlink'
 import { Spectral, Document, Ruleset } from '@stoplight/spectral-core'
 import { oas } from '@stoplight/spectral-rulesets'
-import { Yaml } from '@stoplight/spectral-parsers'
+import { Yaml, Json } from '@stoplight/spectral-parsers'
 import type { LintResult, LintDiagnostic, LinterWorkerApi } from './types'
 
 class LinterWorker implements LinterWorkerApi {
@@ -31,7 +31,10 @@ class LinterWorker implements LinterWorkerApi {
     const diagnostics: LintDiagnostic[] = []
 
     try {
-      const doc = new Document(content, Yaml, 'openapi.yaml')
+      const isJson = content.trim().startsWith('{')
+      const doc = isJson
+        ? new Document(content, Json, 'openapi.json')
+        : new Document(content, Yaml, 'openapi.yaml')
       const results = await this.spectral.run(doc)
 
       for (const result of results) {

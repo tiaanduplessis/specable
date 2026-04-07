@@ -283,6 +283,73 @@ describe('useValidation', () => {
     })
   })
 
+  describe('stale parsedSpec clearing', () => {
+    it('falls back to main-thread parsing when worker returns null parsedSpec', async () => {
+      const oldSpec = {
+        openapi: '3.0.3',
+        info: { title: 'Old', version: '1.0.0' },
+        paths: {},
+      } as ValidationResult['parsedSpec']
+      useEditorStore.setState({ parsedSpec: oldSpec })
+
+      const result = createPipelineResult({
+        validation: createValidationResult({ parsedSpec: null }),
+      })
+      mockValidateDebounced.mockResolvedValue(result)
+
+      renderHook(() => useValidation())
+      await act(async () => {})
+
+      // Fallback parses content on main thread
+      const state = useEditorStore.getState()
+      expect(state.parsedSpec).not.toEqual(oldSpec)
+      expect(state.parsedSpec).toHaveProperty('openapi')
+    })
+
+    it('falls back to main-thread parsing on validation error', async () => {
+      const oldSpec = {
+        openapi: '3.0.3',
+        info: { title: 'Old', version: '1.0.0' },
+        paths: {},
+      } as ValidationResult['parsedSpec']
+      useEditorStore.setState({ parsedSpec: oldSpec })
+
+      mockValidateDebounced.mockRejectedValue(new Error('Worker crashed'))
+
+      renderHook(() => useValidation())
+      await act(async () => {})
+
+      // Fallback parses content on main thread
+      const state = useEditorStore.getState()
+      expect(state.parsedSpec).not.toEqual(oldSpec)
+      expect(state.parsedSpec).toHaveProperty('openapi')
+    })
+
+    it('clears parsedSpec when content is not a valid spec', async () => {
+      useEditorStore.setState({
+        file: {
+          id: 'test',
+          name: 'test.txt',
+          content: 'not a valid spec',
+          isDirty: false,
+          language: 'yaml',
+        },
+        parsedSpec: {
+          openapi: '3.0.3',
+          info: { title: 'Old', version: '1.0.0' },
+          paths: {},
+        } as ValidationResult['parsedSpec'],
+      })
+
+      mockValidateDebounced.mockRejectedValue(new Error('Worker crashed'))
+
+      renderHook(() => useValidation())
+      await act(async () => {})
+
+      expect(useEditorStore.getState().parsedSpec).toBeNull()
+    })
+  })
+
   describe('cleanup', () => {
     it('calls pipeline.cancel() on unmount', () => {
       mockValidateDebounced.mockReturnValue(new Promise(() => {}))

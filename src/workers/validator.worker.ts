@@ -1,8 +1,5 @@
 import { expose } from 'comlink'
-import {
-  validate as validateSpec,
-  parse as parseSpec,
-} from '@readme/openapi-parser'
+import { validate as validateSpec } from '@readme/openapi-parser'
 import YAML from 'yaml'
 import type { OpenAPIV3 } from 'openapi-types'
 import type {
@@ -164,14 +161,10 @@ class ValidatorWorker implements ValidatorWorkerApi {
       })
     }
 
-    // Get the parsed spec for UI display
-    try {
-      parsedSpec = (await parseSpec(
-        structuredClone(parsed) as OpenAPIV3.Document,
-      )) as OpenAPIV3.Document
-    } catch {
-      parsedSpec = parsed as OpenAPIV3.Document
-    }
+    // Use the raw parsed object for UI display to avoid circular references
+    // from $ref resolution that break worker serialization via postMessage.
+    // The DocumentationView handles $ref resolution at render time.
+    parsedSpec = parsed as OpenAPIV3.Document
 
     const validateTimeMs = performance.now() - validateStart
 

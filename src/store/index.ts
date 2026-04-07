@@ -4,6 +4,7 @@ import type { OpenAPIV3 } from 'openapi-types'
 import type { EditorView } from '@codemirror/view'
 import type { VersionSnapshot } from '../services/version-history-db'
 import { DEFAULT_SPEC } from '../constants/default-spec'
+import { detectLanguage } from '../utils/content'
 
 // Re-export types from workers/types.ts to avoid duplication
 export type {
@@ -267,9 +268,13 @@ export const useEditorStore = create<EditorStore>()(
         }),
 
       updateContent: (content) =>
-        set((state) => ({
-          file: state.file ? { ...state.file, content, isDirty: true } : null,
-        })),
+        set((state) => {
+          if (!state.file) return { file: null }
+          const language = detectLanguage(state.file.name, content)
+          return {
+            file: { ...state.file, content, isDirty: true, language },
+          }
+        }),
 
       markClean: () =>
         set((state) => ({
